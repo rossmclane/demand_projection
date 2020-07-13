@@ -121,6 +121,7 @@ class Simulation:
         self.charge_location_model = charge_location_model
         self.charge_amount_model = charge_amount_model
         self.vehicles = vehicles
+        self.results = {}
 
     def predict_charge_location(self, vehicle):
         miles_to_next_charge = self.charge_location_model.run(vehicle)
@@ -129,6 +130,18 @@ class Simulation:
     def predict_charge_amount(self, vehicle):
         energy = self.charge_amount_model.run(vehicle)
         return energy
+
+    def compile_charging_events(self):
+        events_list = []
+
+        for v in self.vehicles:
+            if v.charge_events:
+                events_list.append(v.charge_events)
+
+        charge_events = ChargingEvents(events_list)
+
+        self.results['charging_events'] = charge_events.to_geopandas()
+        self.results['hourly_charging_events'] = charge_events.to_hourly()
 
     def run(self):
 
@@ -151,6 +164,21 @@ class Simulation:
 
                 # Recalculate next charging event
                 miles_to_next_charge = self.predict_charge_location(vehicle)
+
+        self.compile_charging_events()
+
+    def map(self, resolution=8, value='energy', hour=12):
+        # Create a grid of resolution
+        grid = HexGrid(resolution)
+
+        # Join the data frame with the grid
+        grid.hourly_sjoin(self.results['hourly_charging_events'])
+
+        # Plot the energy values
+        hexmap = grid.plot(value=value, hour=hour)
+
+        # Save for the different hours!!
+        return hexmap
 
 
 class ChargingEvent:
@@ -281,7 +309,7 @@ class ChargingEvents:
         df4.set_index('time', inplace=True)
         df4['delta_soc'] = df4['delta_soc'] * (df4['minutes'] / df4['minutes_sum'])
         df4['energy'] = df4['energy'] * (df4['minutes'] / df4['minutes_sum'])
-        df5 = df4.drop(columns=['minutes', 'minutes_sum', 'hour']).sort_values(by='ID')
+        df5 = df4.drop(columns=['minutes', 'minutes_sum']).sort_values(by='ID')
 
         return df5
 
@@ -300,6 +328,7 @@ class HexGrid:
     def __init__(self, resolution):
         self.resolution = resolution
         self.charges = pd.DataFrame()
+        self.hourly_charges = pd.DataFrame()
 
     def sjoin(self, charges):
         """
@@ -327,11 +356,29 @@ class HexGrid:
 
         self.charges = charges
 
-    def plot(self, value='energy', border_color='black', fill_opacity=0.7, initial_map=None, with_legend=False,
+    def hourly_sjoin(self, charges):
+
+        # Add Uber H3 Hex ID to each charging event
+        charges["hex_id"] = charges.apply(
+            lambda row: h3.geo_to_h3(row["longitude"], row["latitude"], resolution=self.resolution), axis=1)
+
+        # Add the geometry associated with each HEX_ID
+        charges["geometry"] = charges.hex_id.apply(lambda x:
+                                                   {"type": "Polygon",
+                                                    "coordinates":
+                                                        [h3.h3_to_geo_boundary(h=x, geo_json=True)]
+                                                    }
+                                                   )
+
+        hourly_charges = charges.groupby(['hex_id', 'hour']).agg(
+            {'delta_soc': 'mean', 'energy': 'mean', 'start_soc': 'mean', 'geometry': 'first'}).reset_index()
+
+        self.hourly_charges = hourly_charges
+
+    def plot(self, hour=12, value='energy', border_color='black', fill_opacity=0.7, initial_map=None, with_legend=False,
              kind="linear"):
 
-        df = self.charges.copy()
-        df = df.groupby('hex_id').agg({value: 'mean', 'geometry': 'first'}).reset_index()
+        df = self.hourly_charges[self.hourly_charges.hour == hour]
 
         # colormap
         min_value = df[value].min()
@@ -357,7 +404,7 @@ class HexGrid:
                                           index=[0, min_value, m, max_value], vmin=min_value, vmax=max_value)
 
         # create geojson data from dataframe
-        geojson_data = self.hexagons_dataframe_to_geojson(df_hex=df, value=value)
+        geojson_data = hexagons_dataframe_to_geojson(df, value)
 
         GeoJson(
             geojson_data,
@@ -375,21 +422,16 @@ class HexGrid:
 
         return initial_map
 
-    def hexagons_dataframe_to_geojson(df_hex, value, file_output=None):
 
-        list_features = []
+def hexagons_dataframe_to_geojson(df, value):
+    list_features = []
 
-        for i, row in df_hex.iterrows():
-            feature = Feature(geometry=row["geometry"], id=row["hex_id"], properties={value: row[value]})
-            list_features.append(feature)
+    for i, row in df.iterrows():
+        feature = Feature(geometry=row["geometry"], id=row["hex_id"], properties={value: row[value]})
+        list_features.append(feature)
 
-        feat_collection = FeatureCollection(list_features)
+    feat_collection = FeatureCollection(list_features)
 
-        geojson_result = json.dumps(feat_collection)
+    geojson_result = json.dumps(feat_collection)
 
-        # optionally write to file
-        if file_output is not None:
-            with open(file_output, "w") as f:
-                json.dump(feat_collection, f)
-
-        return geojson_result
+    return geojson_result

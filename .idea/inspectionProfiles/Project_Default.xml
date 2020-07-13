@@ -1,0 +1,64 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="5">
+            <item index="0" class="java.lang.String" itemvalue="sklearn" />
+            <item index="1" class="java.lang.String" itemvalue="numpy" />
+            <item index="2" class="java.lang.String" itemvalue="pandas" />
+            <item index="3" class="java.lang.String" itemvalue="geopandas" />
+            <item index="4" class="java.lang.String" itemvalue="fiona" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8Inspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="E501" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N801" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="trajectory" />
+          <option value="state_of_charge" />
+          <option value="range" />
+          <option value="odometer_reading" />
+          <option value="time" />
+          <option value="gps" />
+          <option value="charge_events" />
+          <option value="max_odo" />
+          <option value="remaining_miles" />
+          <option value="object.ev_charging_events" />
+          <option value="object.randomly_sample_ev_charging" />
+          <option value="identifier" />
+          <option value="object.randomly_sample_start_soc" />
+          <option value="object.train_model" />
+          <option value="object.vehicles" />
+          <option value="object.prediction_model" />
+          <option value="delta_soc" />
+          <option value="start_soc" />
+          <option value="energy" />
+          <option value="object.battery_capacity" />
+          <option value="object.event_list" />
+          <option value="src.utils.self" />
+          <option value="src.utils.start_time" />
+          <option value="src.utils.duration" />
+          <option value="charging_event_gdf" />
+          <option value="resolution" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
