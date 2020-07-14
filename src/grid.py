@@ -6,6 +6,7 @@ from folium import Map, Marker, GeoJson
 import branca.colormap as cm
 import json
 
+
 class HexGrid:
     """
     Hexagonal Grid based on H3 which can combine with charging event data and
@@ -52,7 +53,7 @@ class HexGrid:
 
         # Add Uber H3 Hex ID to each charging event
         charges["hex_id"] = charges.apply(
-            lambda row: h3.geo_to_h3(row["longitude"], row["latitude"], resolution=self.resolution), axis=1)
+            lambda row: h3.geo_to_h3(row["latitude"], row["longitude"], resolution=self.resolution), axis=1)
 
         # Add the geometry associated with each HEX_ID
         charges["geometry"] = charges.hex_id.apply(lambda x:
@@ -63,14 +64,19 @@ class HexGrid:
                                                    )
 
         hourly_charges = charges.groupby(['hex_id', 'hour']).agg(
-            {'delta_soc': 'mean', 'energy': 'mean', 'start_soc': 'mean', 'geometry': 'first'}).reset_index()
+            {'delta_soc': 'mean', 'energy': 'mean', 'state_of_charge': 'mean', 'geometry': 'first'}).reset_index()
 
         self.hourly_charges = hourly_charges
 
-    def plot(self, hour=12, value='energy', border_color='black', fill_opacity=0.7, initial_map=None, with_legend=False,
+        return hourly_charges
+
+    def plot(self, hour=None, value='energy', border_color='black', fill_opacity=0.7, initial_map=None, with_legend=True,
              kind="linear"):
 
-        df = self.hourly_charges[self.hourly_charges.hour == hour]
+        if hour is not None:
+            df = self.hourly_charges[self.hourly_charges.hour == hour]
+        else:
+            df = self.hourly_charges
 
         # colormap
         min_value = df[value].min()
@@ -85,7 +91,6 @@ class HexGrid:
                               )
 
         # the colormap
-        # color names accepted https://github.com/python-visualization/branca/blob/master/branca/_cnames.json
         if kind == "linear":
             custom_cm = cm.LinearColormap(['green', 'yellow', 'red'], vmin=min_value, vmax=max_value)
         elif kind == "outlier":
@@ -109,8 +114,9 @@ class HexGrid:
         ).add_to(initial_map)
 
         # add legend (not recommended if multiple layers)
-        if with_legend == True:
+        if with_legend:
             custom_cm.add_to(initial_map)
+
 
         return initial_map
 

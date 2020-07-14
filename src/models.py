@@ -59,9 +59,8 @@ class Linear_Kwh_Model:
         delta_soc_predicted = self.model.predict(np.array(vehicle.state_of_charge).reshape(-1, 1))
 
         # If the Delta_SOC predicted is too much for the empty battery capacity, re-predict
-        while delta_soc_predicted >= (100 - vehicle.state_of_charge):
-            print('SOC capacity needed is lower than predicted delta SOC (EXPLORE MORE)')
-            delta_soc_predicted = self.model.predict(np.array(vehicle.state_of_charge).reshape(-1, 1))
+        if delta_soc_predicted >= (100 - vehicle.state_of_charge):
+            delta_soc_predicted = [[100 - vehicle.state_of_charge]]
 
         # kwh prediction
         energy = (delta_soc_predicted[0][0] / 100) * vehicle.battery_capacity
