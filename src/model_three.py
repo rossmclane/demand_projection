@@ -1,7 +1,7 @@
 from __future__ import division
 from pyomo.environ import *
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 # Create a model
 model = AbstractModel()

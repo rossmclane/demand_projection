@@ -23,10 +23,12 @@ class Vehicle:
         Reading of odometer at current vehicle state
     time : Datetime
         Current time of vehicle state
-    gps : list
-        List of GPS [Lat, Lon] for current vehicle state
-    charge_events : list
-        List of gps lists representing simulated charging events
+    latitude : float
+        latitude of current state of vehicle
+    longitude : float
+        longitude of current state of vehicle
+    charge_events : Pandas DataFrame
+        Pandas DataFrame holding charging event information
     max_odo : float
         Maximum odometer reading in the trajectory
     battery_capacity : int
@@ -42,7 +44,8 @@ class Vehicle:
         self.time = pd.to_datetime(trajectory.df.element_time_local).min()
         self.latitude = trajectory.df.decr_lat[0]
         self.longitude = trajectory.df.decr_lng[0]
-        self.charge_events = pd.DataFrame(columns=['latitude', 'longitude', 'start_time', 'end_time', 'delta_soc', 'state_of_charge', 'energy'])
+        self.charging_events = pd.DataFrame(
+            columns=['latitude', 'longitude', 'start_time', 'end_time', 'delta_soc', 'state_of_charge', 'energy'])
         self.max_odo = trajectory.df.odo_read.max()
         self.battery_capacity = 55
 
@@ -62,10 +65,9 @@ class Vehicle:
         Parameters
         ----------
         self: object
-            Python Class Object
-
-        miles : float
-            Number of miles to move the vehicle forward
+            Python Vehicle Class Object
+        miles: int
+            number of miles to move the vehicle forward
         """
 
         # Increase odometer and decrease SOC accordingly
@@ -84,16 +86,31 @@ class Vehicle:
         self.longitude = closest_ping.decr_lng[0]
 
     def charge(self, energy):
-        # derive delta_soc from energy
+        """
+        Charges the vehicle and adds a charging event to charge_events
+
+        Parameters
+        ----------
+        self: object
+            Python Vehicle Class Object
+        energy: int
+            kWh of energy added to the vehicle
+        """
+
+        # Derive delta_soc from energy
         delta_soc = (energy / self.battery_capacity) * 100
+
+        # Add end time of charging event based on duration and power assumptions
         duration = timedelta(hours=(((delta_soc / 100) * 55) / 50))
         start_time = self.time
         end_time = start_time + duration
 
-        # Instead of creating a charging event class, just create a dataframe
-        charge_event = pd.DataFrame([[self.latitude, self.longitude, start_time, end_time, delta_soc, self.state_of_charge, energy]],\
-                                    columns=['latitude', 'longitude', 'start_time', 'end_time', 'delta_soc', 'state_of_charge', 'energy'])
-        self.charge_events = self.charge_events.append(charge_event)
+        # Create a charging event and add to events
+        charging_event = pd.DataFrame(
+            [[self.latitude, self.longitude, start_time, end_time, delta_soc, self.state_of_charge, energy]],
+            columns=['latitude', 'longitude', 'start_time', 'end_time', 'delta_soc', 'start_soc', 'energy'])
+
+        self.charging_events = self.charging_events.append(charging_event)
 
         # Increase the state_of_charge by delta_soc
         self.state_of_charge += delta_soc

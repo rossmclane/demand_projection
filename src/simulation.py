@@ -3,8 +3,8 @@ from fiona.crs import from_epsg
 from geojson.feature import *
 import pandas as pd
 from src.grid import HexGrid
-import multiprocessing as mp
 import geopandas as gpd
+from src.general_utils import generate_hourly_charges
 
 
 class VehicleSimulation:
@@ -28,7 +28,7 @@ class VehicleSimulation:
     def __init__(self, charge_location_model, charge_amount_model):
         self.charge_location_model = charge_location_model
         self.charge_amount_model = charge_amount_model
-        self.ev_charging_events = pd.DataFrame()
+        self.charging_events = pd.DataFrame()
 
     def predict_charge_location(self, vehicle):
         miles_to_next_charge = self.charge_location_model.run(vehicle)
@@ -49,9 +49,10 @@ class VehicleSimulation:
             energy = self.predict_charge_amount(vehicle)
             vehicle.charge(energy)
 
-            self.ev_charging_events = self.ev_charging_events.append(
-                gpd.GeoDataFrame(vehicle.charge_events, geometry=gpd.points_from_xy(vehicle.charge_events.latitude,
-                                                                                    vehicle.charge_events.longitude),
+            # Add charging event to charging events
+            self.charging_events = self.charging_events.append(
+                gpd.GeoDataFrame(vehicle.charging_events, geometry=gpd.points_from_xy(vehicle.charging_events.latitude,
+                                                                                      vehicle.charging_events.longitude),
                                  crs=from_epsg(4326)))
 
 
@@ -78,109 +79,46 @@ class Simulation:
         self.charge_amount_model = charge_amount_model
         self.vehicles = vehicles
         self.charging_events = pd.DataFrame()
-        self.hourly_charging_events = pd.DataFrame()
-        self.hex_joined_hourly_charges = None
-
-    def run_parallel(self):
-
-        # Create a pool
-        pool = mp.Pool(mp.cpu_count())
-
-        def testsim(vehicle):
-            vsim = VehicleSimulation(self.charge_location_model, self.charge_amount_model)
-            vsim.run(vehicle)
-            self.charging_events = self.charging_events.append(vsim.ev_charging_events)
-
-        for vehicle in self.vehicles:
-            pool.apply_async(testsim, args=(vehicle,))
-
-        pool.close()
-        pool.join()
+        self.grid = None
 
     def run(self):
 
+        all_charging_events = pd.DataFrame()
+
         # Run the simulation for each vehicle
         for vehicle in self.vehicles:
-            # Run the simulation on the vehicles
-            vsim = VehicleSimulation(self.charge_location_model, self.charge_amount_model)
-            vsim.run(vehicle)
-            self.charging_events = self.charging_events.append(vsim.ev_charging_events)
+            # Create a vehicle simulation and run it
+            vehicle_sim = VehicleSimulation(self.charge_location_model, self.charge_amount_model)
+            vehicle_sim.run(vehicle)
+
+            # Append charging events to class attribute
+            all_charging_events = all_charging_events.append(vehicle_sim.charging_events)
 
         # Generate hourly charges and save the result for the LP
-        self.generate_hourly_charging_events()
+        self.charging_events = generate_hourly_charges(all_charging_events)
 
-        # Create a grid of resolution
+        # Create a grid object, join results to the grid, and save the grid
         grid = HexGrid(resolution=8)
+        grid.join(self.charging_events, groupby_items=['hex_id', 'hour'], agg_map={'energy': 'sum'}, resolution=8)
+        self.grid = grid
 
-        # Join the data frame with the grid
-        hex_joined_hourly_charges = grid.hourly_sjoin(self.hourly_charging_events)
-        self.hex_joined_hourly_charges = hex_joined_hourly_charges
-
+        # Save the result
         self.save_result()
 
-    def generate_hourly_charging_events(self):
-        # Create unique identifier
-        charge_events_gdf = self.charging_events.copy()
+    def map(self, hour=None):
 
-        charge_events_gdf['ID'] = [i for i in range(0, charge_events_gdf.shape[0])]
+        # generate plot
+        hexmap = self.grid.plot(value_to_map='energy', kind="linear", hour=hour)
 
-        # Create dataframe by minutes in this datetime range
-        start = charge_events_gdf['start_time'].min()
-        end = charge_events_gdf['end_time'].max()
-        index = pd.date_range(start=start, end=end, freq='1T')
-        df2 = pd.DataFrame(index=index, columns= \
-            ['minutes', 'ID', 'latitude', 'longitude', 'delta_soc', 'energy', 'state_of_charge'])
-
-        # Spread the events across minutes
-        for index, row in charge_events_gdf.iterrows():
-            df2['minutes'][row['start_time']:row['end_time']] = 1
-            df2['ID'][row['start_time']:row['end_time']] = row['ID']
-            df2['latitude'][row['start_time']:row['end_time']] = row['latitude']
-            df2['longitude'][row['start_time']:row['end_time']] = row['longitude']
-            df2['delta_soc'][row['start_time']:row['end_time']] = row['delta_soc']
-            df2['energy'][row['start_time']:row['end_time']] = row['energy']
-            df2['state_of_charge'][row['start_time']:row['end_time']] = row['state_of_charge']
-
-        # Clean up dataframe
-        df2 = df2[df2.ID.notna()]
-        df2['time'] = df2.index
-        df2['hour'] = df2['time'].apply(lambda x: x.hour)
-
-        # GroupBy ID and hour
-        df3 = df2.groupby(['ID', 'hour']).agg(
-            {'minutes': 'count', 'time': 'first', 'latitude': 'first', 'longitude': 'first', 'delta_soc': 'first',
-             'energy': 'first', 'state_of_charge': 'first'}).reset_index()
-
-        # Recreate time index
-        df3['time'] = df3['time'].apply(lambda x: pd.datetime(year=x.year, month=x.month, day=x.day, hour=x.hour))
-        df3.set_index('time', inplace=True)
-        df3['time'] = df3.index
-
-        # Spread energy and delta_soc
-        sums = df3.groupby('ID').agg({'minutes': 'sum'}).rename(columns={'minutes': 'minutes_sum'})
-        df4 = pd.merge(df3, sums, on='ID')
-        df4.set_index('time', inplace=True)
-        df4['delta_soc'] = df4['delta_soc'] * (df4['minutes'] / df4['minutes_sum'])
-        df4['energy'] = df4['energy'] * (df4['minutes'] / df4['minutes_sum'])
-        df5 = df4.drop(columns=['minutes', 'minutes_sum']).sort_values(by='ID')
-
-        self.hourly_charging_events = df5
-
-    def map(self, resolution=8, value='energy', hour=12):
-        # Create a grid of resolution
-        grid = HexGrid(resolution)
-
-        # Join the data frame with the grid
-        grid.hourly_sjoin(self.hourly_charging_events)
-
-        # Plot the energy values
-        hexmap = grid.plot(value=value, hour=hour)
-
-        # Save for the different hours!!
         return hexmap
 
     def save_result(self):
-        lp_input = self.hex_joined_hourly_charges.groupby('hex_id').agg({'hour': 'first', 'energy': 'sum'}).reset_index()
-        lp_input = lp_input.sort_values(by='hour')
+        # Retrieve hexbinned results, sort by hour and drop geometry
+
+        lp_input = self.grid.hex_data.sort_values(by='hour').drop(columns=['geometry'])
+
+        # Rename output for linear program
         lp_input = lp_input.rename(columns={'hex_id': 'B', 'hour': 'T', 'energy': 'A'})
+
+        # Write out the model output
         lp_input.to_csv('../data/interim/lp_data/input_data/demand_model_output.csv', index=False)

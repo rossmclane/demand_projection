@@ -1,135 +1,51 @@
 # Regular Imports
-import pandas as pd
-from h3 import h3
 from geojson.feature import *
-from folium import Map, Marker, GeoJson
-import branca.colormap as cm
-import json
+from src.general_utils import *
 
 
 class HexGrid:
     """
-    Hexagonal Grid based on H3 which can combine with charging event data and
-    has functionality to display/write out the resulting graphics
+    Hexagonal Grid based on H3 with functionality to join a set of points to it and plot those values
+    What I need to do is retool the class to do outer joins and then also to make it so that it is generalizable
 
     Attributes
     ----------
     resolution : str
         Resolution of the H3 Hexagonal Grid
+    region : GeoPandas DF
+        GeoPandas DataFrame representing the are across which you want to join features
     """
 
     def __init__(self, resolution):
+        """
+        Input the region and resolution of  the hexagonal grid
+        """
+
+        # initialize attributes
+        self.hex_grid = generate_hexgrid(by_hour=True)
         self.resolution = resolution
-        self.charges = pd.DataFrame()
-        self.hourly_charges = pd.DataFrame()
+        self.hex_data = None
 
-    def sjoin(self, charges):
+    def join(self, df, groupby_items, agg_map, resolution):
         """
-        Convert the ChargingEvents Object to a pandas dataframe of charging events
-
-        Parameters
-        ----------
-        self: object
-            Python Class Object
-        charges: GeoPandas DataFrame
-            GPD of hourly charging events
+        Bin the input dataframe by h3 hexagons
         """
 
-        # Add Uber H3 Hex ID to each charging event
-        charges["hex_id"] = charges.apply(
-            lambda row: h3.geo_to_h3(row["longitude"], row["latitude"], resolution=self.resolution), axis=1)
+        # Bin the dataframe by hexagon with the specified params
+        df_aggreg = bin_by_hexagon(df, groupby_items, agg_map, resolution)
 
-        # Add the geometry associated with each HEX_ID
-        charges["geometry"] = charges.hex_id.apply(lambda x:
-                                                   {"type": "Polygon",
-                                                    "coordinates":
-                                                        [h3.h3_to_geo_boundary(h=x, geo_json=True)]
-                                                    }
-                                                   )
+        # Join with the polyfill grid with the df_aggreg
+        df_outer = pd.merge(left=self.hex_grid[["hex_id", "hour", "geometry"]],
+                            right=df_aggreg[["hex_id", "hour", "energy"]],
+                            left_on=groupby_items, right_on=groupby_items, how="left")
 
-        self.charges = charges
+        df_outer = df_outer.fillna(0)
 
-    def hourly_sjoin(self, charges):
+        self.hex_data = df_outer
 
-        # Add Uber H3 Hex ID to each charging event
-        charges["hex_id"] = charges.apply(
-            lambda row: h3.geo_to_h3(row["latitude"], row["longitude"], resolution=self.resolution), axis=1)
+    def plot(self, value_to_map, kind, hour):
 
-        # Add the geometry associated with each HEX_ID
-        charges["geometry"] = charges.hex_id.apply(lambda x:
-                                                   {"type": "Polygon",
-                                                    "coordinates":
-                                                        [h3.h3_to_geo_boundary(h=x, geo_json=True)]
-                                                    }
-                                                   )
+        # Use choropleth plotting function
+        hmap = h3_choropleth_map(self.hex_data, value_to_map, kind, hour)
 
-        hourly_charges = charges.groupby(['hex_id', 'hour']).agg(
-            {'delta_soc': 'mean', 'energy': 'mean', 'state_of_charge': 'mean', 'geometry': 'first'}).reset_index()
-
-        self.hourly_charges = hourly_charges
-
-        return hourly_charges
-
-    def plot(self, hour=None, value='energy', border_color='black', fill_opacity=0.7, initial_map=None, with_legend=True,
-             kind="linear"):
-
-        if hour is not None:
-            df = self.hourly_charges[self.hourly_charges.hour == hour]
-        else:
-            df = self.hourly_charges
-
-        # colormap
-        min_value = df[value].min()
-        max_value = df[value].max()
-        m = round((min_value + max_value) / 2, 0)
-
-        res = h3.h3_get_resolution(df['hex_id'].iloc[0])
-
-        if initial_map is None:
-            initial_map = Map(location=[34.052235, -118.243683], zoom_start=11, tiles="cartodbpositron",
-                              attr='© <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="http://cartodb.com/attributions#basemaps">CartoDB</a>'
-                              )
-
-        # the colormap
-        if kind == "linear":
-            custom_cm = cm.LinearColormap(['green', 'yellow', 'red'], vmin=min_value, vmax=max_value)
-        elif kind == "outlier":
-            # for outliers, values would be -11,0,1
-            custom_cm = cm.LinearColormap(['blue', 'white', 'red'], vmin=min_value, vmax=max_value)
-        elif kind == "filled_nulls":
-            custom_cm = cm.LinearColormap(['sienna', 'green', 'yellow', 'red'],
-                                          index=[0, min_value, m, max_value], vmin=min_value, vmax=max_value)
-
-        # create geojson data from dataframe
-        geojson_data = hexagons_dataframe_to_geojson(df, value)
-
-        GeoJson(
-            geojson_data,
-            style_function=lambda feature: {
-                'fillColor': custom_cm(feature['properties'][value]),
-                'color': border_color,
-                'weight': 1,
-                'fillOpacity': fill_opacity
-            }
-        ).add_to(initial_map)
-
-        # add legend (not recommended if multiple layers)
-        if with_legend:
-            custom_cm.add_to(initial_map)
-
-
-        return initial_map
-
-
-def hexagons_dataframe_to_geojson(df, value):
-    list_features = []
-
-    for i, row in df.iterrows():
-        feature = Feature(geometry=row["geometry"], id=row["hex_id"], properties={value: row[value]})
-        list_features.append(feature)
-
-    feat_collection = FeatureCollection(list_features)
-
-    geojson_result = json.dumps(feat_collection)
-
-    return geojson_result
+        return hmap

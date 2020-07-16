@@ -1,9 +1,20 @@
 <component name="ProjectDictionaryState">
   <dictionary name="rossmclane">
     <words>
+      <w>aggreg</w>
+      <w>choropleth</w>
+      <w>coords</w>
       <w>dataframe</w>
       <w>evse</w>
+      <w>groupby</w>
+      <w>hexbinned</w>
       <w>hexmap</w>
+      <w>hexs</w>
+      <w>hmap</w>
+      <w>shapefile</w>
+      <w>sjoin</w>
+      <w>subzone</w>
+      <w>uber</w>
       <w>vsim</w>
     </words>
   </dictionary>
