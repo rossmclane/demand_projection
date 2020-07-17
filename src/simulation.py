@@ -115,10 +115,10 @@ class Simulation:
     def save_result(self):
         # Retrieve hexbinned results, sort by hour and drop geometry
 
-        lp_input = self.grid.hex_data.sort_values(by='hour').drop(columns=['geometry'])
+        lp_input = self.grid.hex_data.sort_values(by='hour')
 
         # Rename output for linear program
         lp_input = lp_input.rename(columns={'hex_id': 'B', 'hour': 'T', 'energy': 'A'})
 
         # Write out the model output
-        lp_input.to_csv('../data/interim/lp_data/input_data/demand_model_output.csv', index=False)
+        lp_input.to_csv('../data/interim/lp_data/input_data/Demand_Model_Output.csv', index=False)

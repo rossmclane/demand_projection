@@ -78,7 +78,7 @@ def hexagons_dataframe_to_geojson(df_hex, file_output=None):
     return geojson_result
 
 
-def h3_choropleth_map(df_aggreg: pd.DataFrame, value_to_map: str, kind: str, hour: int, border_color='black', fill_opacity=0.2,
+def h3_choropleth_map(df_aggreg: pd.DataFrame, value_to_map: str, kind: str, hour: int, border_color='black', fill_opacity=0.7,
                       initial_map=None, map_center=[34.0522, -118.2437], with_legend=True):
     """
     Builds a folium choropleth map from an df containing H3 hex cells and some cell value such as 'count'.
@@ -96,7 +96,7 @@ def h3_choropleth_map(df_aggreg: pd.DataFrame, value_to_map: str, kind: str, hou
     if hour is not None:
         df_aggreg = df_aggreg[df_aggreg.hour == hour]
     else:
-        df_aggreg = df_aggreg.groupby(['hex_id']).agg({'energy': 'sum', 'geometry': 'first', 'hex_id': 'first'})
+        df_aggreg = df_aggreg.groupby(['hex_id']).agg({value_to_map: 'sum', 'geometry': 'first', 'hex_id': 'first'})
 
     # create geojson data from dataframe
     geojson_data = hexagons_dataframe_to_geojson(df_hex=df_aggreg)

@@ -8,7 +8,17 @@ import os.path
 
 class linear_program:
 
+    def construct_inputs(self):
+
+        # Construct the files needed for input from the demand output file
+        # Read in demand input
+        # Load Sets
+        # Create each file
+            # Calculate Travel Times from google_api and Calculate Penalty Matrix
+        #
+
     def load(self):
+
         # Create a model
         model = AbstractModel()
 
